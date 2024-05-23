@@ -1,0 +1,576 @@
+
+<script>
+  // general settings for bulk chart. Easy to edit from here
+  const settings = {
+    heading: {
+      show_price_range: false,
+    },
+    messages: {
+      required_field: "verify all required fields are filled out",
+      required_input: "please select a value from the chart",
+      min_purchase_note: "Please note: you must purchase at least {{product.min_purchase_quantity}} of each required variant."
+    },
+    colors: {
+      black: "#666666",
+      red: "red",
+      green: "#036603"
+    }
+  }
+</script>
+
+<script src="https://cdn.jsdelivr.net/npm/@bigcommerce/stencil-utils@6.12.1/dist/stencil-utils.min.js"></script>
+<p id="minPurchaseNote" style="margin-bottom: 5px; display: none;"></p>
+<div id="bulk-order-chart-wrapper">
+  <table id="bulk-order-chart">
+    <thead>
+      <tr id="bulkChartHeader">
+        <th></th>
+        <th id="minPurchaseToMinBulk"></th>
+      </tr>
+    </thead>
+    <tbody>
+      {{#each product.options.[0].values}}
+      <tr>
+        <td>{{label}}</td>
+        <td>{{../product.price.without_tax.formatted}}</td>
+        {{#each ../product.bulk_discount_rates}}
+        {{#if type '==' 'fixed'}}
+        <td>{{discount.formatted}}</td>
+        {{else if type '==' 'percent'}}
+        <td>{{discount.formatted}} off</td>
+        {{else}}
+        <td>{{discount.formatted}} off</td>
+        {{/if}}
+        {{/each}}
+        <td><input class="bulk-input bulkChartInput" type="number" placeholder="0" data-option-id="{{id}}"
+            name="qty[{{./../product.options.[0].id}}_{{id}}]" style="border-color: #dddddd"></td>
+      </tr>
+      {{/each}}
+    </tbody>
+  </table>
+</div>
+
+<div id="bulk-total-wrapper">
+  <div><span style="margin-right: 10px">Total:</span>$<input id="bulk-total" type="text" value="0.00" style="border: none; padding: 0; width: 64px;" readonly></div>
+  <span id="savings"></span> 
+</div>
+
+<style>
+  #bulk-order-chart-wrapper {
+    width: 100%;
+    overflow-x: auto;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    border: 1px solid #e5e5e5;
+  }
+
+  #bulk-order-chart {
+    width: auto;
+    border: none;
+  }
+
+  #bulk-order-chart tr td,
+  #bulk-order-chart tr th {
+    min-width: 100px !important;
+    border: none;
+    border-right: 1px solid #e5e5e5;
+  }
+
+  #bulk-order-chart tr {
+    border-bottom: 1px solid #e5e5e5;
+  }
+
+  #bulk-order-chart tr td:first-child,
+  #bulk-order-chart tr th:first-child {
+    position: sticky;
+    left: 0;
+    background: #fff;
+    border-bottom: 1px solid #e5e5e5;
+    background-clip: padding-box;
+  }
+
+  #bulk-order-chart tr td:last-child,
+  #bulk-order-chart tr th:last-child {
+    position: sticky;
+    right: 0;
+    background: #fff;
+    border-bottom: 1px solid #e5e5e5;
+    border-right: none;
+    background-clip: padding-box;
+  }
+
+  .bulk-input {
+    padding: 5px 10px;
+  }
+
+  #bulk-total-wrapper {
+    width: 100%;
+    width: 180px;
+    position: relative;
+    margin-left: auto;
+    padding: 15px;
+    border: 1px solid #e5e5e5;
+    border-top: none;
+    margin-bottom: 30px;
+  }
+
+  #bulk-total:focus {
+    outline: none !important;
+  }
+
+  #bulk-total:hover {
+    cursor: default;
+  }
+</style>
+
+<script>
+  if ("{{product.min_purchase_quantity}}" > 1) {
+    const minPurchaseNote = document.getElementById("minPurchaseNote");
+    minPurchaseNote.style.display = "block";
+    minPurchaseNote.style.color = settings.colors.black;
+    minPurchaseNote.innerText = settings.messages.min_purchase_note;
+  }
+</script>
+
+<script>
+  const bulkRates = [];
+</script>
+{{#each product.bulk_discount_rates}}
+<script>
+  bulkRates.push({
+    min: Number("{{min}}"),
+    max: Number("{{max}}"),
+    discount: Number("{{discount.value}}")
+  });
+</script>
+{{/each}}
+
+<script>
+  // loop over the bulk rates to create the table header
+  for (let { min, max } of bulkRates) {
+    // create a th element to append to the header
+    const th = document.createElement('th');
+
+    // if using a price range
+    if (settings.heading.show_price_range) {
+      // show the min - max on header unless max is 0 (last bulk breakpoint)
+      th.innerText = max > 0 ? `${min} - ${max}` : `${min}+`
+    } else {
+      // if not using a price range, display only the min
+      th.innerText = min;
+    }
+
+    // append the th to the chart header
+    document.getElementById("bulkChartHeader").appendChild(th);
+  }
+
+  // append the qty th to the end of the bulk chart header
+  const qtyHeading = document.createElement('th');
+  qtyHeading.innerText = "qty";
+  document.getElementById("bulkChartHeader").appendChild(qtyHeading);
+</script>
+
+<script>
+  // IIFE - create the first table header cell for minPurchaseAmount - bulk_discount_rates[0] - 1
+  (function createFirstTableHeadCell() {
+    const firstColumn = document.getElementById("minPurchaseToMinBulk");
+    // hide option that the bulk table replaces
+    document.querySelectorAll("[data-product-attribute]")[0].style.display = "none";
+
+    // if using the price range in the header
+    if (settings.heading.show_price_range) {
+      const minMinusOne = "{{product.bulk_discount_rates.[0].min}}" - 1;
+      const minPurchase = "{{product.min_purchase_quantity}}" > 1 ? "{{product.min_purchase_quantity}}" : 1;
+      if (minMinusOne === 1) {
+        // if minMinusOne equals 1, insert 1 into the table header
+        document.getElementById("minPurchaseToMinBulk").innerText = "1";
+      } else {
+        // else insert minPurchaseAmount - minMinusOne
+        document.getElementById("minPurchaseToMinBulk").innerText = `${minPurchase} - ${minMinusOne}`;
+      }
+    } else {
+      // if not using the price range in the header
+      // use the min purchase quantity if it's greater than 1, otherwise, set the column to 1
+      if ("{{product.min_purchase_quantity}}" > 1) firstColumn.innerText = "{{product.min_purchase_quantity}}";
+      else firstColumn.innerText = "1";
+    }
+  })();
+
+  // getProductOptions retrieves all the variants and modifiers. Returns an array of all that are not display none
+  // not grabbing display none because that will be the first variant which is what is displayed in the bulk chart
+  function getProductOptions() {
+    // select every product option
+    const allProductOptions = document.querySelectorAll("[data-product-attribute]");
+    // Return an array of HTML nodes and only return the nodes that are visible
+    return Array.from(allProductOptions).filter(option => option.style.display !== "none");
+  }
+
+  // getOptionType gets the data from the variant and modifier fields.
+  // it checks if the option is a selection or an input type and handles the option
+  // after handling the option, it pushes it's data into the productOptions array
+  function getOptionType(arrOfNodes) {
+    // available attributes from data-product-attribute
+    const selectionAttributes = ["set-rectangle", "set-select", "set-radio", "swatch", "input-checkbox"];
+    const inputAttributes = ["input-file", "input-text", "input-number", "date", "textarea"];
+    // attributeIndex is the index of the product attribute from the required array above
+    let attributeIndex;
+    // productOptions will hold an array of objects containing fields for required, label, id, and value
+    const productOptions = [];
+    for (let node of arrOfNodes) {
+      let attribute = node.dataset.productAttribute;
+      // if the value of data-product-attribute is in the selectionAttributes array
+      if (selectionAttributes.includes(attribute)) {
+        attributeIndex = selectionAttributes.indexOf(attribute);
+        // send the HTML node and the value of data-product-attribute to handleSelectOption
+        productOptions.push(handleSelectionOption(node, selectionAttributes[attributeIndex]));
+      } else {
+        attributeIndex = inputAttributes.indexOf(attribute);
+        // send the HTML node and the value of data-product-attribute to handleInputOption
+        productOptions.push(handleInputOption(node, inputAttributes[attributeIndex]));
+      }
+    }
+    return productOptions;
+  }
+
+  // handleSelectOption handles grabbing the data from the select type.
+  // it will return an object containing required, label, id, and value
+  function handleSelectionOption(node, attribute) { // rectangle, dropdown, radio, and swatch options
+    switch (attribute) {
+      case "swatch":
+      case "set-rectangle":
+      case "input-checkbox": {
+        return handleStandardSelectOption(node);
+        break;
+      }
+      case "set-radio": {
+        return handleRadioOption(node);
+        break;
+      }
+      case "set-select": {
+        return handleDropdownOption(node);
+        break;
+      }
+    }
+  }
+
+  // handleInputOption handles grabbing the data from the input type.
+  // it will return an object containing required, label, id, and value
+  function handleInputOption(node, attribute) {
+    switch (attribute) {
+      case "input-file": {
+        return handleFileInput(node);
+        break;
+      }
+      case "input-text":
+      case "input-number":
+      case "textarea": {
+        return handleStandardInput(node);
+        break;
+      }
+      case "date": {
+        return handleDateInput(node);
+        break;
+      }
+    }
+  }
+
+  // GET OPTION IDs AND VALUES
+  function handleStandardSelectOption(node) {
+    // get the input label and check if required
+    const { label, required } = getLabelAndRequired(node);
+    const selectedOption = Array.from(node.children).filter(option => option.className === "form-option-wrapper").filter(option => option.firstElementChild.checked); // get only swatches/rectangles and return only the selected swatch/rectangle
+    return {
+      "required": required,
+      "label": label,
+      "id": selectedOption.length === 0 ? null : selectedOption[0].firstElementChild.name, // if no value selected, return null. Else return swatch/retangle option id
+      "value": selectedOption.length === 0 ? null : selectedOption[0].firstElementChild.value // if no value selected, return null. Else return the value or the selected swatch/rectangle
+    }
+  }
+
+  // GET OPTION IDs AND VALUES
+  function handleRadioOption(node) {
+    // get the input label and check if required
+    const { label, required } = getLabelAndRequired(node);
+    const selectedRadio = Array.from(node.children).filter(option => option.className === "form-radio").filter(option => option.checked); // get only radio inputs and return only the selected radio
+    return {
+      "required": required,
+      "label": label,
+      "id": selectedRadio.length === 0 ? null : selectedRadio[0].name, // if no value selected, return null. Else return radio option id
+      "value": selectedRadio.length === 0 ? null : selectedRadio[0].value // if no value selected, return null. Else return the value or the selected radio
+    }
+  }
+
+  // GET OPTION IDs AND VALUES
+  function handleDropdownOption(node) {
+    // get the input label and check if required
+    const { label, required } = getLabelAndRequired(node);
+    const selectedDropdownOption = node.lastElementChild;
+    return {
+      "required": required,
+      "label": label,
+      "id": selectedDropdownOption.value === "" ? null : selectedDropdownOption.name, // if no value selected, return null. Else return dropdown option id
+      "value": selectedDropdownOption.value === "" ? null : selectedDropdownOption.value // if no value selected, return null. Else return the value or the selected dropdown option
+    }
+  }
+
+  // GET INPUT OPTION IDs AND VALUES
+  function handleFileInput(node) {
+    // get the input label and check if required
+    const { label, required } = getLabelAndRequired(node);
+    const fileInput = node.children[1];
+    return {
+      "required": required,
+      "label": label,
+      "id": fileInput.files.length === 0 ? null : fileInput.name,
+      "value": fileInput.files.length === 0 ? null : fileInput.files[0]
+    }
+  }
+
+  // GET INPUT OPTION IDs AND VALUES
+  function handleStandardInput(node) {
+    // get the input label and check if required
+    const { label, required } = getLabelAndRequired(node);
+    return {
+      "required": required,
+      "label": label,
+      "id": node.lastElementChild.value === "" ? null : node.lastElementChild.name,
+      "value": node.lastElementChild.value === "" ? null : node.lastElementChild.value
+    }
+  }
+
+  // GET INPUT OPTION IDs AND VALUES
+  function handleDateInput(node) {
+    // get the input label and check if required
+    const { label, required } = getLabelAndRequired(node);
+    const dateInputs = Array.from(node.children).filter(option => option.className === "form-select form-select--date"); // get the inputs for the date values
+    let nullValues = 0;
+    dateInputs.forEach(input => {
+      if (input.value === "") nullValues++;
+    });
+    return {
+      "required": required,
+      "label": label,
+      "id": nullValues > 0 ? null : dateInputs.map(input => input.name),
+      "value": nullValues > 0 ? null : dateInputs.map(input => input.value)
+    }
+  }
+
+  // getLabelAndRequired grabs the variant/modifier label (ex: size, color) and if it's a required field
+  function getLabelAndRequired(node) {
+    const label = node.firstElementChild.innerText.split(":")[0]; // get the label content before the :
+    const required = node.firstElementChild.innerText.includes("Required"); // if label includes the word Required
+    return {
+      "label": label,
+      "required": required
+    }
+  }
+
+  // defaultColors is required for the checkForCorrectMin function below.
+  // It grabs any default colors before editing the colors on error
+  const defaultColors = {
+    inputBorder: document.querySelector(".bulkChartInput").style.borderColor
+  }
+
+  // checkForCorrectMin checks the input value and makes sure that it's at least the min purchase quantity 
+  function checkForCorrectMin(inputs) {
+    const minPurchaseQuantity = "{{product.min_purchase_quantity}}" || 1;
+
+    // get the valid and invalid inputs
+    const invalidInputs = []; // invalid is used to display error text
+    const validInputs = []; // return only the valid inputs
+
+    for (const input of inputs) {
+      // if the customer didn't select at least the min purchase quantity AND the input value is greater than zero
+      if (Number(input.value) < minPurchaseQuantity && Number(input.value) > 0) {
+        input.style.borderColor = settings.colors.red;
+        // document.getElementById("minPurchaseNote").style.color = settings.colors.red;
+        // if an error does occur, push the invalid input
+        invalidInputs.push(input);
+      } else {
+        input.style.borderColor = defaultColors.inputBorder;
+        validInputs.push(input);
+      }
+    }
+
+    // if the length of invalidInputs isn't 0, make the purchase note red
+    if (invalidInputs.length > 0) document.getElementById("minPurchaseNote").style.color = settings.colors.red;
+    // otherwise change the note back to black
+    else document.getElementById("minPurchaseNote").style.color = settings.colors.black;
+    // return only the valid inputs
+    return validInputs;
+  }
+
+  // getBulkInputsWithValues grabs only the inputs that have a value greater than 0.
+  // returns the id, value, and quantity of each input
+  function getBulkInputsWithValues() {
+    // select the qty inputs on the bulk chart
+    const bulkInputs = document.querySelectorAll(".bulk-input");
+    // return only the inputs that have a value
+    let selectedInputs = Array.from(bulkInputs).filter(input => input.value !== "");
+    // get the valid inputs that meet the minimum requirements
+    const validInputs = checkForCorrectMin(selectedInputs);
+    // loop over the inputs and return the id, value, and quantity
+    return validInputs.map(input => {
+      let inputValueAndID = input.name.replace(/qty\[(.+)\]/, '$1').split("_");
+      return {
+        "id": inputValueAndID[0],
+        "value": inputValueAndID[1],
+        "qty": input.value
+      }
+    });
+  }
+
+  // HELPER FUNCTIONS
+  function checkForNullRequired(arr) {
+    // create an array of required fields
+    const requiredFields = arr.filter(item => item.required === true);
+    // create a counter for required fields that are null valued
+    let nullValues = 0;
+    for (let item of requiredFields) {
+      // if value is null, incrememnt the null values counter
+      if (item.value === null) nullValues++;
+    }
+    return nullValues; // return 0 for false (no required fields are null) or any other number for true (there are required fields with null values)
+  }
+
+  // IIFE - update the total quantity selected
+  (function updateBulkTotal() {
+    const bulkInputs = document.querySelectorAll(".bulk-input");
+    let discountType; // TODO delete once handler functions are created
+    //const totalBulkRates = "{{product.bulk_discount_rates}}".split(",").length;
+
+    function handlePercent(quantity) {
+      // return only the bulk pricing rate that matches the if condition inside - NOTE: returns an array
+      const bulkPricing = bulkRates.filter(rate => quantity <= rate.max && quantity >= rate.min);
+      if (bulkPricing.length === 0) return "{{product.price.without_tax.value}}"; // product doesn't meet bulk pricing limit
+
+      // multiply the product price by the decimal value for discount
+      const discountAmount = "{{product.price.without_tax.value}}" * (bulkPricing[0].discount / 100);
+      // subtract the discount amount from the product price and return the discounted price
+      return "{{product.price.without_tax.value}}" - discountAmount;
+    }
+
+    function handleFixed(quantity) {
+      const bulkPricing = bulkRates.filter(rate => quantity <= rate.max && quantity >= rate.min);
+      if (bulkPricing.length === 0) return "{{product.price.without_tax.value}}"; // product doesn't meet bulk pricing limit
+      return bulkPricing[0].discount;
+    }
+
+    function calculateSavings(discount, totalQuantity) {
+      return (("{{product.price.without_tax.value}}" - discount) * totalQuantity).toFixed(2);
+    }
+
+    for (let input of bulkInputs) {
+      input.addEventListener("change", function () {
+        // prevent negative numbers in the input fields
+        if (Number(input.value) <= 0) input.value = 0;
+        // always set the total to zero to check how much of each product is being ordered on every input change
+        let totalQty = 0;
+        // get the bulk inputs with values
+        const inputsWithValues = getBulkInputsWithValues();
+        // add to the totalQty the input values from each input with a value
+        inputsWithValues.forEach(input => totalQty += Number(input.qty));
+
+        let discountedPrice;
+        // check the discount type
+        switch ("{{product.bulk_discount_rates.[0].type}}") {
+          case "percent":
+            discountedPrice = handlePercent(totalQty); // discount - in BC product dashboard
+            break;
+          case "fixed":
+            discountType = "fixed"; // fixed amount - in BC product dashboard
+            discountedPrice = handleFixed(totalQty);
+            break;
+          case "price":
+            discountType = "price"; // off/unit - in BC product dashboard
+            break;
+          default:
+            break;
+        }
+        // display a note about how much you save buying in bulk
+        const savings = calculateSavings(discountedPrice, totalQty);
+        document.getElementById("savings").style.color = settings.colors.green;
+        if (savings > 0.00) document.getElementById("savings").innerText = `You save $${savings}!`;
+        else document.getElementById("savings").innerText = "";
+        // set the bulk total value to the cart total including discounts
+        document.getElementById("bulk-total").value = (totalQty * discountedPrice).toFixed(2);
+      });
+    }
+  })();
+
+  window.addEventListener("load", function () {
+    if (document.querySelector(".form-field--increments")) {
+      document.querySelector(".form-field--increments").style.display = "none";
+    }
+    if (document.getElementById("bulk-order-chart-wrapper").style.display !== "none" && document.getElementById("form-action-addToCart")) {
+      document.getElementById("form-action-addToCart").addEventListener("click", function (e) {
+        e.preventDefault();
+        const productOptions = getOptionType(getProductOptions());
+        const selectedBulkValues = getBulkInputsWithValues();
+        const note = document.createElement("p");
+        if (checkForNullRequired(productOptions)) missingRequiredFields(note, settings.messages.required_field);
+        else if (selectedBulkValues.length === 0) missingRequiredFields(note, settings.messages.required_input);
+        else addToCart(productOptions, selectedBulkValues);
+      });
+    }
+  });
+
+  function missingRequiredFields(note, message) {
+    note.innerHTML = `<br>${message}`;
+    note.style.color = settings.colors.red;
+    note.style.position = "absolute";
+    note.style.bottom = "40px";
+    document.querySelector(".form-action").append(note)
+    setTimeout(() => document.querySelector(".form-action").removeChild(note), 3000)
+  }
+
+  function addToCart(options, bulkValues) {
+    // set item to the last element in the array
+    const item = bulkValues[bulkValues.length - 1];
+    const formData = new FormData();
+    formData.append('action', 'add');
+    formData.append('product_id', "{{product.id}}");
+    formData.append(`attribute[${item.id}]`, item.value);
+    formData.append('qty[]', item.qty);
+    // loop over the options and set them on every bulk value
+    for (let option of options) {
+      if (option.value) {
+        if (Array.isArray(option.value)) { // check for date and append each date value
+          for (let i = 0; i < option.value.length; i++) {
+            formData.append(option.id[i], option.value[i]);
+          }
+        } else {
+          formData.append(option.id, option.value);
+        }
+      }
+    }
+
+    // add the item quantity to the cart count in navbar
+    const cartCount = document.querySelector(".cart-quantity");
+    cartCount.innerHTML = Number(cartCount.innerHTML) + Number(item.qty);
+    const addToCartButton = document.getElementById("form-action-addToCart");
+
+    // remove the last item from the array
+    bulkValues.pop();
+    // add the item to the cart
+    window.stencilUtils.api.cart.itemAdd(formData, (err, res) => {
+      // if there are still items in the bulk values array, run the function again
+      if (bulkValues.length > 0) {
+        addToCartButton.innerText = "Adding To Cart...";
+        addToCartButton.disabled = true;
+        return addToCart(options, bulkValues);
+      } else {
+        // else clear the inputs and reset the add to cart button back to default
+        addToCartButton.innerText = "Added To Cart!";
+        addToCartButton.disabled = false;
+        document.querySelectorAll(".bulk-input").forEach(input => {
+          input.value = null;
+        });
+        setTimeout(() => {
+          addToCartButton.innerText = "Add To Cart";
+        }, 3000);
+      }
+    })
+  }
+</script>
